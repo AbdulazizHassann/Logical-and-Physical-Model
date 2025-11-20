@@ -1,0 +1,214 @@
+------------------------------------------------------------
+-- DROP ALL TABLES makes script re-runnable
+------------------------------------------------------------
+DROP TABLE IF EXISTS activity_allocation CASCADE;
+DROP TABLE IF EXISTS skill_set CASCADE;
+DROP TABLE IF EXISTS planned_activity CASCADE;
+DROP TABLE IF EXISTS course_instance CASCADE;
+DROP TABLE IF EXISTS contacts CASCADE;
+DROP TABLE IF EXISTS employee CASCADE;
+DROP TABLE IF EXISTS department CASCADE;
+DROP TABLE IF EXISTS teaching_activity CASCADE;
+DROP TABLE IF EXISTS skill CASCADE;
+DROP TABLE IF EXISTS person CASCADE;
+DROP TABLE IF EXISTS job_title CASCADE;
+DROP TABLE IF EXISTS course_layout CASCADE;
+
+DROP TYPE IF EXISTS study_period CASCADE;
+
+------------------------------------------------------------
+-- ENUM TYPE
+------------------------------------------------------------
+
+CREATE TYPE study_period AS ENUM ('P1', 'P2', 'P3', 'P4');
+
+------------------------------------------------------------
+-- TABLES NO FOREIGN KEYS YET
+------------------------------------------------------------
+
+CREATE TABLE course_layout (
+    course_code VARCHAR(10) NOT NULL,
+    course_name CHAR(10) NOT NULL,
+    min_students INT NOT NULL,
+    max_students INT NOT NULL,
+    hp DECIMAL(10) NOT NULL,
+    version INT NOT NULL,
+    PRIMARY KEY (course_code)
+);
+
+CREATE TABLE job_title (
+    job_title_id VARCHAR(10) NOT NULL,
+    job_title_name VARCHAR(10),
+    PRIMARY KEY (job_title_id)
+);
+
+CREATE TABLE person (
+    personal_number VARCHAR(12) NOT NULL,
+    first_name VARCHAR(10) NOT NULL,
+    last_name VARCHAR(15) NOT NULL,
+    PRIMARY KEY (personal_number)
+);
+
+CREATE TABLE skill (
+    skill_id VARCHAR(10) NOT NULL,
+    skill_name VARCHAR(10) NOT NULL,
+    PRIMARY KEY (skill_id)
+);
+
+CREATE TABLE teaching_activity (
+    activity_id VARCHAR(10) NOT NULL,
+    activity_name VARCHAR(10),
+    factor FLOAT(10),
+    PRIMARY KEY (activity_id)
+);
+
+CREATE TABLE department (
+    department_id VARCHAR(10) NOT NULL,
+    department_name VARCHAR(10) NOT NULL,
+    manager_employment_id VARCHAR(10),
+    PRIMARY KEY (department_id)
+);
+
+CREATE TABLE employee (
+    employment_id VARCHAR(10) NOT NULL,
+    personal_number VARCHAR(12) NOT NULL,
+    job_title_id VARCHAR(10) NOT NULL,
+    max_courses INT,
+    PRIMARY KEY (employment_id)
+);
+
+CREATE TABLE contacts (
+    personal_number CHAR(10) NOT NULL,
+    phone_nr CHAR(12) NOT NULL,
+    email VARCHAR(40) NOT NULL,
+    address VARCHAR(10) NOT NULL,
+    PRIMARY KEY (personal_number)
+);
+
+CREATE TABLE course_instance (
+    instance_id VARCHAR(10) NOT NULL,
+    course_code VARCHAR(10) NOT NULL,
+    study_year INT,
+    num_students INT NOT NULL,
+    study_period study_period NOT NULL,
+    PRIMARY KEY (instance_id)
+);
+
+CREATE TABLE planned_activity (
+    planned_activity_id CHAR(10) NOT NULL,
+    activity_id VARCHAR(10) NOT NULL,
+    course_code VARCHAR(10) NOT NULL,
+    planned_hours INT,
+    PRIMARY KEY (planned_activity_id)
+);
+
+CREATE TABLE skill_set (
+    skill_id VARCHAR(10) NOT NULL,
+    employment_id VARCHAR(10) NOT NULL,
+    PRIMARY KEY (skill_id, employment_id)
+);
+
+CREATE TABLE activity_allocation (
+    employment_id VARCHAR(10) NOT NULL,
+    planned_activity_id VARCHAR(10) NOT NULL,
+    PRIMARY KEY (employment_id, planned_activity_id)
+);
+
+------------------------------------------------------------
+-- FOREIGN KEYS CORRECT ORDER
+------------------------------------------------------------
+
+ALTER TABLE contacts
+ADD CONSTRAINT FK_contacts_person
+    FOREIGN KEY (personal_number) REFERENCES person(personal_number) ON DELETE CASCADE;
+
+ALTER TABLE employee
+ADD CONSTRAINT FK_employee_person
+    FOREIGN KEY (personal_number) REFERENCES person(personal_number) ON DELETE CASCADE;
+
+ALTER TABLE employee
+ADD CONSTRAINT FK_employee_job_title
+    FOREIGN KEY (job_title_id) REFERENCES job_title(job_title_id);
+
+ALTER TABLE department
+ADD CONSTRAINT FK_department_employee_manager
+    FOREIGN KEY (manager_employment_id) REFERENCES employee(employment_id) ON DELETE SET NULL;
+
+ALTER TABLE course_instance
+ADD CONSTRAINT FK_course_instance_course_layout
+    FOREIGN KEY (course_code) REFERENCES course_layout(course_code) ON DELETE CASCADE;
+
+ALTER TABLE planned_activity
+ADD CONSTRAINT FK_planned_activity_teaching_activity
+    FOREIGN KEY (activity_id) REFERENCES teaching_activity(activity_id);
+
+ALTER TABLE planned_activity
+ADD CONSTRAINT FK_planned_activity_course_layout
+    FOREIGN KEY (course_code) REFERENCES course_layout(course_code) ON DELETE CASCADE;
+
+ALTER TABLE skill_set
+ADD CONSTRAINT FK_skill_set_skill
+    FOREIGN KEY (skill_id) REFERENCES skill(skill_id) ON DELETE CASCADE;
+
+ALTER TABLE skill_set
+ADD CONSTRAINT FK_skill_set_employee
+    FOREIGN KEY (employment_id) REFERENCES employee(employment_id) ON DELETE CASCADE;
+
+ALTER TABLE activity_allocation
+ADD CONSTRAINT FK_activity_allocation_employee
+    FOREIGN KEY (employment_id) REFERENCES employee(employment_id) ON DELETE CASCADE;
+
+ALTER TABLE activity_allocation
+ADD CONSTRAINT FK_activity_allocation_planned_activity
+    FOREIGN KEY (planned_activity_id) REFERENCES planned_activity(planned_activity_id) ON DELETE CASCADE;
+
+------------------------------------------------------------
+-- TRIGGER FUNCTION
+------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION try_teacher_allocation()
+RETURNS TRIGGER AS $$
+DECLARE
+    course_count INT;
+    current_period_id INT;
+    course_max INT;
+    relevant_year INT;
+BEGIN
+    SELECT ci2.study_period, ci2.study_year
+    INTO current_period_id, relevant_year
+    FROM planned_activity pa2
+    JOIN course_instance ci2 ON pa2.course_code = ci2.course_code
+    WHERE pa2.planned_activity_id = NEW.planned_activity_id;
+
+    SELECT COUNT(*)
+    INTO course_count
+    FROM activity_allocation aa
+    JOIN planned_activity pa ON aa.planned_activity_id = pa.planned_activity_id
+    JOIN course_instance ci ON pa.course_code = ci.course_code
+    WHERE aa.employment_id = NEW.employment_id
+      AND ci.study_period = current_period_id
+      AND ci.study_year = relevant_year;
+
+    SELECT max_courses
+    INTO course_max
+    FROM employee
+    WHERE employment_id = NEW.employment_id;
+
+    IF course_count >= course_max THEN
+        RAISE EXCEPTION 
+            'Teacher cannot be assigned to more than % different courses in study period %',
+            course_max, current_period_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+------------------------------------------------------------
+-- TRIGGER
+------------------------------------------------------------
+
+CREATE TRIGGER trigger_teacher_course_limit
+BEFORE INSERT ON activity_allocation
+FOR EACH ROW
+EXECUTE FUNCTION try_teacher_allocation();
