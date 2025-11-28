@@ -33,7 +33,7 @@ CREATE TABLE course_layout (
     max_students INT NOT NULL,
     hp DECIMAL(10) NOT NULL,
     version INT NOT NULL,
-    PRIMARY KEY (course_code)
+    PRIMARY KEY (course_code,version)
 );
 
 CREATE TABLE job_title (
@@ -74,6 +74,7 @@ CREATE TABLE employee (
     personal_number VARCHAR(12) NOT NULL,
     job_title_id VARCHAR(10) NOT NULL,
     max_courses INT,
+    supervisor_id VARCHAR(10),
     PRIMARY KEY (employment_id)
 );
 
@@ -111,7 +112,18 @@ CREATE TABLE skill_set (
 CREATE TABLE activity_allocation (
     employment_id VARCHAR(10) NOT NULL,
     planned_activity_id VARCHAR(10) NOT NULL,
+    allocated_hours INT,
     PRIMARY KEY (employment_id, planned_activity_id)
+);
+
+CREATE TABLE salary (
+    salary_id SERIAL PRIMARY KEY,
+    employment_id VARCHAR(10) NOT NULL,
+    salary_amount NUMERIC(10,2) NOT NULL,
+    currency VARCHAR(3),
+    valid_from DATE NOT NULL,
+    valid_to DATE,
+    FOREIGN KEY (employment_id) REFERENCES employee(employment_id)
 );
 
 ------------------------------------------------------------
