@@ -32,8 +32,7 @@ CREATE TABLE course_layout (
     min_students INT NOT NULL,
     max_students INT NOT NULL,
     hp DECIMAL(10) NOT NULL,
-    version INT NOT NULL,
-    PRIMARY KEY (course_code,version)
+    PRIMARY KEY (course_code)
 );
 
 CREATE TABLE job_title (
