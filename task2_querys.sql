@@ -152,7 +152,7 @@ ORDER BY
 -------------------- QUERY 3 -----------------------------
 -- Calculate total allocated hours per teacher across all course instances
 -- for the current year
-
+EXPLAIN ANALYZE
 WITH AllocationDetails AS (
     SELECT 
         ci.course_code,
